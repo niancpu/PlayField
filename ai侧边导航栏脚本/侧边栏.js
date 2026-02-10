@@ -219,67 +219,66 @@
     injectCSS() {
       const css = `
 #ai-toc{
-  --at-bg: rgba(255,255,255,.90); --at-bd:#d4d4d8; --at-txt:#111827;
-  --at-h-bg:rgba(245,245,245,.88); --at-h-txt:#111827; --at-act:#111827; --at-shd:0 6px 22px rgba(0,0,0,.12);
-  --at-s-off:#9ca3af; --at-s-on:#111827;
+  --at-bg:#ffffff; --at-bd:#e8eaed; --at-txt:#202124;
+  --at-h-bg:#ffffff; --at-h-txt:#202124; --at-act:#1a73e8; --at-shd:0 1px 2px rgba(60,64,67,.15),0 1px 3px 1px rgba(60,64,67,.1);
+  --at-s-off:#9aa0a6; --at-s-on:#1a73e8;
 }
 #ai-toc.theme-dark{
-  --at-bg: rgba(17,17,17,.88)!important; --at-bd:#3f3f46!important; --at-txt:#f5f5f5!important;
-  --at-h-bg:rgba(24,24,27,.84)!important; --at-h-txt:#fafafa!important; --at-act:#e5e7eb!important;
-  --at-shd:0 8px 24px rgba(0,0,0,.45)!important; --at-s-off:#71717a!important; --at-s-on:#fafafa!important;
+  --at-bg:#202124!important; --at-bd:#3c4043!important; --at-txt:#e8eaed!important;
+  --at-h-bg:#202124!important; --at-h-txt:#e8eaed!important; --at-act:#8ab4f8!important;
+  --at-shd:0 1px 2px rgba(0,0,0,.45),0 1px 3px 1px rgba(0,0,0,.3)!important; --at-s-off:#9aa0a6!important; --at-s-on:#8ab4f8!important;
 }
 #ai-toc{
   position:fixed; z-index:9999; display:flex; flex-direction:column;
   background:var(--at-bg); border:1px solid var(--at-bd); color:var(--at-txt);
-  border-radius:12px; box-shadow:var(--at-shd);
-  font-family:system-ui,sans-serif;
-  transition:width .22s ease, height .22s ease, opacity .2s ease, background .22s ease, box-shadow .22s ease, border-color .22s ease, transform .12s ease;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  border-radius:14px; box-shadow:var(--at-shd);
+  font-family:Roboto,"Segoe UI",system-ui,sans-serif;
+  transition:width .18s ease, height .18s ease, border-color .18s ease, box-shadow .18s ease, transform .08s ease;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
   will-change: transform, width, height;
   contain: content;
 }
-#ai-toc.fx-off{ backdrop-filter:none !important; -webkit-backdrop-filter:none !important; box-shadow:none !important; }
+#ai-toc.fx-off{ box-shadow:none !important; }
 #ai-toc.resizing{
   transition:none !important;
-  backdrop-filter:none !important;
-  -webkit-backdrop-filter:none !important;
+  box-shadow:none !important;
 }
 #ai-head,#ai-foot{
   padding:10px 12px; cursor:move; display:flex; justify-content:space-between; align-items:center;
   flex-shrink:0; user-select:none;
 }
-#ai-head{ border-bottom:1px solid var(--at-bd); background:var(--at-h-bg); border-radius:12px 12px 0 0; }
-#ai-foot{ border-top:1px solid var(--at-bd); border-radius:0 0 12px 12px; font-size:12px; }
-.ai-title{ font-weight:700; font-size:16px; color:var(--at-h-txt); }
-.ai-ctrls{ display:flex; gap:8px; align-items:center; }
-.ai-btn{ cursor:pointer; opacity:.65; transition:.15s; font-size:14px; }
-.ai-btn:hover{ opacity:1; transform:scale(1.06); color:var(--at-act); }
+#ai-head{ border-bottom:1px solid var(--at-bd); background:var(--at-h-bg); border-radius:14px 14px 0 0; }
+#ai-foot{ border-top:1px solid var(--at-bd); border-radius:0 0 14px 14px; font-size:12px; }
+.ai-title{ font-weight:600; font-size:14px; letter-spacing:.2px; color:var(--at-h-txt); }
+.ai-ctrls{ display:flex; gap:10px; align-items:center; }
+.ai-btn{ cursor:pointer; opacity:.78; transition:.15s; font-size:14px; line-height:1; color:var(--at-s-off); }
+.ai-btn:hover{ opacity:1; color:var(--at-act); transform:none; }
 
 #ai-search{
-  margin:8px; padding:4px 8px; border:1px solid var(--at-bd); border-radius:6px;
+  margin:10px 10px 8px; padding:7px 10px; border:1px solid var(--at-bd); border-radius:10px;
   background:transparent; color:var(--at-txt); font-size:12px; outline:none; flex-shrink:0;
 }
-#ai-search:focus{ border-color:var(--at-act); }
+#ai-search:focus{ border-color:var(--at-act); box-shadow:0 0 0 2px color-mix(in srgb, var(--at-act) 18%, transparent); }
 
 #ai-body{ flex:1; overflow-y:auto; padding:4px 0; scrollbar-width:thin; min-height:0; scroll-behavior:smooth; }
-#ai-body::-webkit-scrollbar{ width:4px; }
+#ai-body::-webkit-scrollbar{ width:6px; }
 #ai-body::-webkit-scrollbar-thumb{ background:var(--at-bd); border-radius:8px; }
 #ai-resizer{
-  position:absolute; right:3px; bottom:3px; width:14px; height:14px; cursor:nwse-resize;
-  opacity:.55; border-radius:3px; z-index:2;
-  background:linear-gradient(135deg, transparent 0 38%, var(--at-act) 38% 46%, transparent 46% 62%, var(--at-act) 62% 70%, transparent 70% 100%);
+  position:absolute; right:4px; bottom:4px; width:12px; height:12px; cursor:nwse-resize;
+  opacity:.35; border-radius:2px; z-index:2;
+  background:linear-gradient(135deg, transparent 0 42%, var(--at-s-off) 42% 50%, transparent 50% 64%, var(--at-s-off) 64% 72%, transparent 72% 100%);
 }
-#ai-resizer:hover{ opacity:.9; }
+#ai-resizer:hover{ opacity:.7; }
 
 .ai-item{
-  padding:6px 10px 6px 2px; cursor:pointer; display:flex; align-items:center;
-  border-left:3px solid transparent; transition:.12s;
+  padding:7px 10px 7px 4px; cursor:pointer; display:flex; align-items:center;
+  border-left:3px solid transparent; transition:background .12s ease, border-color .12s ease;
 }
-.ai-item:hover{ background:rgba(0,0,0,.05); border-left-color:var(--at-act); padding-left:8px; }
-.ai-item.mark{ background:rgba(0,0,0,.03); border-left-color:var(--at-s-on); font-weight:600; }
+.ai-item:hover{ background:color-mix(in srgb, var(--at-act) 8%, transparent); border-left-color:var(--at-act); padding-left:4px; }
+.ai-item.mark{ background:color-mix(in srgb, var(--at-act) 12%, transparent); border-left-color:var(--at-s-on); font-weight:500; }
 .ai-star{ width:22px; text-align:center; color:var(--at-s-off); font-size:12px; }
-.ai-item.mark .ai-star{ color:var(--at-s-on); text-shadow:0 0 4px var(--at-s-on); }
+.ai-item.mark .ai-star{ color:var(--at-s-on); text-shadow:none; }
 .ai-txt{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; pointer-events:none; font-size:12px; }
 
 .ai-wide{ width:${CFG.maxW}px !important; }
@@ -321,23 +320,23 @@
       this.dom.root.style.height = initialH + "px";
 
       const head = mk("div", "", { id: "ai-head" });
-      const title = mk("div", "ai-title", { textContent: CFG.symbol });
+      const title = mk("div", "ai-title", { textContent: "Guidance" });
 
       const ctrls = mk("div", "ai-ctrls");
       const btnFx = mk("span", "ai-btn", {
-        textContent: "⚡",
+        textContent: "◌",
         title: "切换性能模式（关特效更省）",
       });
       this.dom.btnTheme = mk("span", "ai-btn", {
-        textContent: this.state.theme === "dark" ? "☾" : "☼",
+        textContent: this.state.theme === "dark" ? "◐" : "◑",
         title: "切换深色/浅色",
       });
       const btnWide = mk("span", "ai-btn", {
-        textContent: "↔",
+        textContent: "⬌",
         title: "切换宽度",
       });
       this.dom.btnFold = mk("span", "ai-btn", {
-        textContent: this.state.isCollapsed ? "◀" : "▼",
+        textContent: this.state.isCollapsed ? "▸" : "▾",
         title: "折叠/展开",
       });
 
@@ -353,12 +352,12 @@
 
       const foot = mk("div", "", { id: "ai-foot" });
       const jumpCtrls = mk("div", "ai-ctrls");
-      const btnTop = mk("span", "ai-btn", { textContent: "⬆", title: "顶部" });
-      const btnBot = mk("span", "ai-btn", { textContent: "⬇", title: "底部" });
+      const btnTop = mk("span", "ai-btn", { textContent: "⌃", title: "顶部" });
+      const btnBot = mk("span", "ai-btn", { textContent: "⌄", title: "底部" });
       jumpCtrls.append(btnTop, btnBot);
 
       const exportBtn = mk("span", "ai-btn", {
-        textContent: "复制",
+        textContent: "⧉",
         title: "左键：复制目录\nShift+左键：导出完整对话",
       });
       foot.append(jumpCtrls, exportBtn);
@@ -762,7 +761,7 @@
 
       const star = document.createElement("span");
       star.className = "ai-star";
-      star.textContent = "★";
+      star.textContent = "☆";
 
       const label = document.createElement("span");
       label.className = "ai-txt";
@@ -910,7 +909,7 @@
 
       this.state.theme = next;
       if (this.dom.btnTheme)
-        this.dom.btnTheme.textContent = next === "dark" ? "☾" : "☀";
+        this.dom.btnTheme.textContent = next === "dark" ? "◐" : "◑";
       Utils.storage.set("theme", next);
       Utils.toast(next === "dark" ? "已切换到深色" : "已切换到浅色");
     }
@@ -918,7 +917,7 @@
     toggleCollapse() {
       this.state.isCollapsed = !this.state.isCollapsed;
       this.dom.root.classList.toggle("ai-hide");
-      this.dom.btnFold.textContent = this.state.isCollapsed ? "◀" : "▼";
+      this.dom.btnFold.textContent = this.state.isCollapsed ? "▸" : "▾";
       Utils.storage.set("collapsed", this.state.isCollapsed);
     }
 
