@@ -165,7 +165,8 @@
         isDragging: false,
         isResizing: false,
         offset: { x: 0, y: 0 },
-        resizeStart: { x: 0, y: 0, w: 0, h: 0 },
+        resizeStart: { x: 0, y: 0, w: 0, h: 0, l: 0, t: 0 },
+        resizeDir: "",
       };
 
       this.dom = {};
@@ -263,12 +264,6 @@
 #ai-body{ flex:1; overflow-y:auto; padding:4px 0; scrollbar-width:thin; min-height:0; scroll-behavior:smooth; }
 #ai-body::-webkit-scrollbar{ width:6px; }
 #ai-body::-webkit-scrollbar-thumb{ background:var(--at-bd); border-radius:8px; }
-#ai-resizer{
-  position:absolute; right:4px; bottom:4px; width:12px; height:12px; cursor:nwse-resize;
-  opacity:.35; border-radius:2px; z-index:2;
-  background:linear-gradient(135deg, transparent 0 42%, var(--at-s-off) 42% 50%, transparent 50% 64%, var(--at-s-off) 64% 72%, transparent 72% 100%);
-}
-#ai-resizer:hover{ opacity:.7; }
 
 .ai-item{
   padding:7px 10px 7px 4px; cursor:pointer; display:flex; align-items:center;
@@ -371,18 +366,7 @@
       });
       foot.append(jumpCtrls, exportBtn);
 
-      this.dom.resizer = mk("div", "", {
-        id: "ai-resizer",
-        title: "拖动调整宽高",
-      });
-
-      this.dom.root.append(
-        head,
-        this.dom.search,
-        this.dom.body,
-        foot,
-        this.dom.resizer,
-      );
+      this.dom.root.append(head, this.dom.search, this.dom.body, foot);
       document.body.appendChild(this.dom.root);
 
       if (this.state.pos.x !== -1) {
@@ -455,9 +439,7 @@
 
       const startDrag = (e) => {
         if (
-          e.target.closest(".ai-btn") ||
-          e.target.closest("#ai-search") ||
-          e.target.closest("#ai-resizer")
+          e.target.closest(".ai-btn") || e.target.closest("#ai-search")
         )
           return;
         this.state.isDragging = true;
@@ -466,24 +448,67 @@
         e.currentTarget.style.cursor = "grabbing";
       };
 
-      const startResize = (e) => {
+      const EDGE_HIT = 8;
+      const getResizeDir = (e) => {
+        const rect = this.dom.root.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const nearL = x >= 0 && x <= EDGE_HIT;
+        const nearR = x >= rect.width - EDGE_HIT && x <= rect.width;
+        const nearT = y >= 0 && y <= EDGE_HIT;
+        const nearB = y >= rect.height - EDGE_HIT && y <= rect.height;
+
+        if (!(nearL || nearR || nearT || nearB)) return "";
+        return `${nearT ? "n" : nearB ? "s" : ""}${nearL ? "w" : nearR ? "e" : ""}`;
+      };
+
+      const cursorOfDir = (dir) => {
+        if (dir === "n" || dir === "s") return "ns-resize";
+        if (dir === "e" || dir === "w") return "ew-resize";
+        if (dir === "ne" || dir === "sw") return "nesw-resize";
+        if (dir === "nw" || dir === "se") return "nwse-resize";
+        return "";
+      };
+
+      const startResize = (e, dir) => {
+        if (!dir) return;
+        if (e.target.closest(".ai-btn") || e.target.closest("#ai-search")) return;
         e.preventDefault();
         e.stopPropagation();
         this.state.isResizing = true;
+        this.state.resizeDir = dir;
         this.dom.root.classList.add("resizing");
         this.state.resizeStart = {
           x: e.clientX,
           y: e.clientY,
           w: this.dom.root.offsetWidth,
           h: this.dom.root.offsetHeight,
+          l: this.dom.root.offsetLeft,
+          t: this.dom.root.offsetTop,
         };
       };
 
       const head = this.dom.root.querySelector("#ai-head");
-      const foot = this.dom.root.querySelector("#ai-foot");
       head.onmousedown = startDrag;
-      foot.onmousedown = startDrag;
-      if (this.dom.resizer) this.dom.resizer.onmousedown = startResize;
+
+      this.dom.root.addEventListener("mousemove", (e) => {
+        if (this.state.isResizing || this.state.isDragging) return;
+        const dir = getResizeDir(e);
+        const c = cursorOfDir(dir);
+        this.dom.root.style.cursor = c || "";
+      });
+
+      this.dom.root.addEventListener("mouseleave", () => {
+        if (!this.state.isResizing && !this.state.isDragging) {
+          this.dom.root.style.cursor = "";
+        }
+      });
+
+      this.dom.root.addEventListener("mousedown", (e) => {
+        const dir = getResizeDir(e);
+        if (!dir) return;
+        startResize(e, dir);
+      });
 
       document.addEventListener(
         "mousemove",
@@ -512,24 +537,48 @@
 
                 const dx = p.x - this.state.resizeStart.x;
                 const dy = p.y - this.state.resizeStart.y;
+                const dir = this.state.resizeDir || "se";
 
                 const vwMax = Math.max(CFG.minW, window.innerWidth - 16);
                 const vhMax = Math.max(CFG.minH, window.innerHeight - 16);
-
                 const maxW = Math.min(CFG.maxW, vwMax);
                 const maxH = Math.min(CFG.maxH, vhMax);
 
-                const nextW = Math.max(
-                  CFG.minW,
-                  Math.min(maxW, this.state.resizeStart.w + dx),
-                );
-                const nextH = Math.max(
-                  CFG.minH,
-                  Math.min(maxH, this.state.resizeStart.h + dy),
-                );
+                let nextW = this.state.resizeStart.w;
+                let nextH = this.state.resizeStart.h;
+                let nextL = this.state.resizeStart.l;
+                let nextT = this.state.resizeStart.t;
+
+                if (dir.includes("e")) {
+                  nextW = Math.max(
+                    CFG.minW,
+                    Math.min(maxW, this.state.resizeStart.w + dx),
+                  );
+                }
+                if (dir.includes("s")) {
+                  nextH = Math.max(
+                    CFG.minH,
+                    Math.min(maxH, this.state.resizeStart.h + dy),
+                  );
+                }
+                if (dir.includes("w")) {
+                  const rawW = this.state.resizeStart.w - dx;
+                  nextW = Math.max(CFG.minW, Math.min(maxW, rawW));
+                  nextL = this.state.resizeStart.l + (this.state.resizeStart.w - nextW);
+                }
+                if (dir.includes("n")) {
+                  const rawH = this.state.resizeStart.h - dy;
+                  nextH = Math.max(CFG.minH, Math.min(maxH, rawH));
+                  nextT = this.state.resizeStart.t + (this.state.resizeStart.h - nextH);
+                }
 
                 this.dom.root.style.width = nextW + "px";
                 this.dom.root.style.height = nextH + "px";
+                if (dir.includes("w") || dir.includes("n")) {
+                  this.dom.root.style.left = nextL + "px";
+                  this.dom.root.style.top = nextT + "px";
+                  this.dom.root.style.right = "auto";
+                }
               });
             }
           }
@@ -541,7 +590,6 @@
         if (this.state.isDragging) {
           this.state.isDragging = false;
           head.style.cursor = "move";
-          foot.style.cursor = "move";
           Utils.storage.set("pos", {
             x: this.dom.root.offsetLeft,
             y: this.dom.root.offsetTop,
@@ -550,13 +598,19 @@
 
         if (this.state.isResizing) {
           this.state.isResizing = false;
+          this.state.resizeDir = "";
           this.dom.root.classList.remove("resizing");
+          this.dom.root.style.cursor = "";
           const w = this.dom.root.offsetWidth;
           const h = this.dom.root.offsetHeight;
           this.state.size = { w, h };
           this.state.isWide = w > (CFG.minW + CFG.maxW) / 2;
           Utils.storage.set("size", this.state.size);
           Utils.storage.set("wide", this.state.isWide);
+          Utils.storage.set("pos", {
+            x: this.dom.root.offsetLeft,
+            y: this.dom.root.offsetTop,
+          });
           this.renderListFull();
         }
       });
