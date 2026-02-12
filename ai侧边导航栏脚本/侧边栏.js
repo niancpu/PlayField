@@ -29,13 +29,11 @@
   const NS = SITE;
 
   const CFG = {
-    symbol: "⌬",
     minW: 220,
     maxW: 560,
     minH: 220,
     maxH: 760,
     defaultH: 520,
-    len: 18,
     MAX_CACHE: 3000, // 缓存上限（用于目录/搜索/复制目录）
     MAX_RENDER: 1200, // 列表渲染上限（只渲染最近 N 条，避免 DOM 太大）
     IDLE_TIMEOUT: 800,
@@ -146,7 +144,6 @@
     constructor() {
       this.site = SITE;
       this.siteConfig = SITE_CONFIG[this.site] || SITE_CONFIG.gpt;
-      this.themes = ["light", "dark"];
 
       this.cache = {
         items: [], // { key, kind, val, weak, hash, txt, lower, preview }
@@ -204,7 +201,8 @@
     }
 
     getSelectors() {
-      return this.siteConfig.userSelector;
+      // 采集入口统一用 allSelector，避免某些页面 userSelector 只命中首条
+      return this.siteConfig.allSelector;
     }
 
     getAllMessageSelectors() {
@@ -212,19 +210,9 @@
     }
 
     findChatRoot() {
-      const main = document.querySelector("main");
-      if (!main) return document.body;
-
-      // 尽量把 observer 绑在“消息流容器”附近，减少无关变动
-      const anyMsg = main.querySelector(this.getAllMessageSelectors());
-      if (anyMsg) {
-        const near =
-          anyMsg.closest('[role="log"]') ||
-          anyMsg.closest("section") ||
-          anyMsg.parentElement?.parentElement;
-        return near || main;
-      }
-      return main;
+      // 之前靠近消息节点找 section 容器，部分页面会缩到“单条消息容器”，导致只抓到一条
+      // 这里改为稳定根：优先 main，兜底 body
+      return document.querySelector("main") || document.body;
     }
 
     injectCSS() {
@@ -647,6 +635,7 @@
       this.cache.node2key = new WeakMap();
       this.cache.autoInc = 1;
       this._renderedCount = 0;
+      this._recentSigTs = new Map();
 
       this.chatRoot = this.findChatRoot();
       this._lastHref = location.href;
@@ -764,6 +753,9 @@
     }
 
     registerMessageNode(node) {
+      const role = this.siteConfig.roleOf ? this.siteConfig.roleOf(node) : "ai";
+      if (role !== "user") return false;
+
       const raw = Utils.fastText(node);
       let txt = this.normalizeUserText(raw);
 
@@ -874,11 +866,10 @@
 
     fullRescan() {
       const root = this.chatRoot || this.findChatRoot();
-      const nodes = root
-        ? Array.from(root.querySelectorAll(this.getSelectors()))
-        : [];
+      const scope = root || document;
+      const nodes = Array.from(scope.querySelectorAll(this.getSelectors()));
       for (const n of nodes) this.registerMessageNode(n);
-      this.renderListFull(true);
+      this.renderListFull();
     }
 
     manualRefreshRescan(silent = false) {
@@ -889,9 +880,9 @@
     // 不清空缓存的增量补扫：用于兜底漏采集
     rescanIncremental() {
       const root = this.chatRoot || this.findChatRoot();
-      if (!root) return;
+      const scope = root || document;
 
-      const nodes = root.querySelectorAll(this.getSelectors());
+      const nodes = scope.querySelectorAll(this.getSelectors());
       let any = false;
       for (const n of nodes) {
         if (this.registerMessageNode(n)) any = true;
@@ -933,7 +924,7 @@
     }
 
     // 全量重建列表（仅基于缓存，不扫 DOM）
-    renderListFull(force = false) {
+    renderListFull() {
       const kw = this.state.keyword;
       const items = this.cache.items;
 
