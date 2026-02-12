@@ -41,7 +41,6 @@
 
   const SITE_CONFIG = {
     gpt: {
-      userSelector: 'div[data-message-author-role="user"]',
       allSelector: "div[data-message-author-role]",
       roleOf(el) {
         const role =
@@ -52,12 +51,6 @@
       },
     },
     gemini: {
-      userSelector: [
-        "user-query",
-        '[data-test-id="user-message"]',
-        ".user-query-bubble",
-        'div[data-message-author-role="user"]',
-      ].join(","),
       allSelector: [
         "user-query",
         "model-response",
@@ -165,8 +158,7 @@
         isDragging: false,
         isResizing: false,
         offset: { x: 0, y: 0 },
-        resizeStart: { x: 0, y: 0, w: 0, h: 0, l: 0, t: 0 },
-        resizeDir: "",
+        resizeStart: { x: 0, y: 0, w: 0, h: 0 },
       };
 
       this.dom = {};
@@ -239,21 +231,38 @@
   will-change: transform, width, height;
   contain: content;
 }
+#ai-resizer{
+  position:absolute;
+  right:6px;
+  bottom:6px;
+  width:16px;
+  height:16px;
+  border-radius:6px;
+  border:1px solid var(--at-bd);
+  background:color-mix(in srgb, var(--at-act) 18%, transparent);
+  cursor:nwse-resize;
+  opacity:.9;
+  z-index:3;
+}
+#ai-resizer:hover{
+  background:color-mix(in srgb, var(--at-act) 28%, transparent);
+}
 #ai-toc.fx-off{ box-shadow:none !important; }
 #ai-toc.resizing{
   transition:none !important;
   box-shadow:none !important;
 }
 #ai-head,#ai-foot{
-  padding:10px 12px; cursor:move; display:flex; justify-content:space-between; align-items:center;
+  padding:10px 12px; display:flex; justify-content:space-between; align-items:center;
   flex-shrink:0; user-select:none;
 }
-#ai-head{ border-bottom:1px solid var(--at-bd); background:var(--at-h-bg); border-radius:14px 14px 0 0; }
-#ai-foot{ border-top:1px solid var(--at-bd); border-radius:0 0 14px 14px; font-size:12px; }
+#ai-head{ cursor:move; border-bottom:1px solid var(--at-bd); background:var(--at-h-bg); border-radius:14px 14px 0 0; }
+#ai-foot{ cursor:default; border-top:1px solid var(--at-bd); border-radius:0 0 14px 14px; font-size:12px; }
 .ai-title{ font-weight:600; font-size:14px; letter-spacing:.2px; color:var(--at-h-txt); }
 .ai-ctrls{ display:flex; gap:10px; align-items:center; }
 .ai-btn{ cursor:pointer; opacity:.78; transition:.15s; font-size:14px; line-height:1; color:var(--at-s-off); }
 .ai-btn:hover{ opacity:1; color:var(--at-act); transform:none; }
+#ai-export-btn{ margin-right:26px; } /* 让复制按钮位于右下角拖拽按钮左侧 */
 
 #ai-search{
   margin:10px 10px 8px; padding:7px 10px; border:1px solid var(--at-bd); border-radius:10px;
@@ -361,12 +370,21 @@
       jumpCtrls.append(btnTop, btnBot);
 
       const exportBtn = mk("span", "ai-btn", {
+        id: "ai-export-btn",
         textContent: "⧉",
         title: "左键：复制目录\nShift+左键：导出完整对话",
       });
       foot.append(jumpCtrls, exportBtn);
 
-      this.dom.root.append(head, this.dom.search, this.dom.body, foot);
+      this.dom.resizer = mk("div", "", { id: "ai-resizer", title: "拖拽缩放" });
+
+      this.dom.root.append(
+        head,
+        this.dom.search,
+        this.dom.body,
+        foot,
+        this.dom.resizer,
+      );
       document.body.appendChild(this.dom.root);
 
       if (this.state.pos.x !== -1) {
@@ -448,67 +466,23 @@
         e.currentTarget.style.cursor = "grabbing";
       };
 
-      const EDGE_HIT = 8;
-      const getResizeDir = (e) => {
-        const rect = this.dom.root.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const nearL = x >= 0 && x <= EDGE_HIT;
-        const nearR = x >= rect.width - EDGE_HIT && x <= rect.width;
-        const nearT = y >= 0 && y <= EDGE_HIT;
-        const nearB = y >= rect.height - EDGE_HIT && y <= rect.height;
-
-        if (!(nearL || nearR || nearT || nearB)) return "";
-        return `${nearT ? "n" : nearB ? "s" : ""}${nearL ? "w" : nearR ? "e" : ""}`;
-      };
-
-      const cursorOfDir = (dir) => {
-        if (dir === "n" || dir === "s") return "ns-resize";
-        if (dir === "e" || dir === "w") return "ew-resize";
-        if (dir === "ne" || dir === "sw") return "nesw-resize";
-        if (dir === "nw" || dir === "se") return "nwse-resize";
-        return "";
-      };
-
-      const startResize = (e, dir) => {
-        if (!dir) return;
-        if (e.target.closest(".ai-btn") || e.target.closest("#ai-search")) return;
+      const startResize = (e) => {
         e.preventDefault();
         e.stopPropagation();
         this.state.isResizing = true;
-        this.state.resizeDir = dir;
         this.dom.root.classList.add("resizing");
         this.state.resizeStart = {
           x: e.clientX,
           y: e.clientY,
           w: this.dom.root.offsetWidth,
           h: this.dom.root.offsetHeight,
-          l: this.dom.root.offsetLeft,
-          t: this.dom.root.offsetTop,
         };
       };
 
       const head = this.dom.root.querySelector("#ai-head");
       head.onmousedown = startDrag;
 
-      this.dom.root.addEventListener("mousemove", (e) => {
-        if (this.state.isResizing || this.state.isDragging) return;
-        const dir = getResizeDir(e);
-        const c = cursorOfDir(dir);
-        this.dom.root.style.cursor = c || "";
-      });
-
-      this.dom.root.addEventListener("mouseleave", () => {
-        if (!this.state.isResizing && !this.state.isDragging) {
-          this.dom.root.style.cursor = "";
-        }
-      });
-
-      this.dom.root.addEventListener("mousedown", (e) => {
-        const dir = getResizeDir(e);
-        if (!dir) return;
-        startResize(e, dir);
-      });
+      this.dom.resizer.addEventListener("mousedown", startResize);
 
       document.addEventListener(
         "mousemove",
@@ -537,48 +511,23 @@
 
                 const dx = p.x - this.state.resizeStart.x;
                 const dy = p.y - this.state.resizeStart.y;
-                const dir = this.state.resizeDir || "se";
 
                 const vwMax = Math.max(CFG.minW, window.innerWidth - 16);
                 const vhMax = Math.max(CFG.minH, window.innerHeight - 16);
                 const maxW = Math.min(CFG.maxW, vwMax);
                 const maxH = Math.min(CFG.maxH, vhMax);
 
-                let nextW = this.state.resizeStart.w;
-                let nextH = this.state.resizeStart.h;
-                let nextL = this.state.resizeStart.l;
-                let nextT = this.state.resizeStart.t;
-
-                if (dir.includes("e")) {
-                  nextW = Math.max(
-                    CFG.minW,
-                    Math.min(maxW, this.state.resizeStart.w + dx),
-                  );
-                }
-                if (dir.includes("s")) {
-                  nextH = Math.max(
-                    CFG.minH,
-                    Math.min(maxH, this.state.resizeStart.h + dy),
-                  );
-                }
-                if (dir.includes("w")) {
-                  const rawW = this.state.resizeStart.w - dx;
-                  nextW = Math.max(CFG.minW, Math.min(maxW, rawW));
-                  nextL = this.state.resizeStart.l + (this.state.resizeStart.w - nextW);
-                }
-                if (dir.includes("n")) {
-                  const rawH = this.state.resizeStart.h - dy;
-                  nextH = Math.max(CFG.minH, Math.min(maxH, rawH));
-                  nextT = this.state.resizeStart.t + (this.state.resizeStart.h - nextH);
-                }
+                const nextW = Math.max(
+                  CFG.minW,
+                  Math.min(maxW, this.state.resizeStart.w + dx),
+                );
+                const nextH = Math.max(
+                  CFG.minH,
+                  Math.min(maxH, this.state.resizeStart.h + dy),
+                );
 
                 this.dom.root.style.width = nextW + "px";
                 this.dom.root.style.height = nextH + "px";
-                if (dir.includes("w") || dir.includes("n")) {
-                  this.dom.root.style.left = nextL + "px";
-                  this.dom.root.style.top = nextT + "px";
-                  this.dom.root.style.right = "auto";
-                }
               });
             }
           }
@@ -598,7 +547,6 @@
 
         if (this.state.isResizing) {
           this.state.isResizing = false;
-          this.state.resizeDir = "";
           this.dom.root.classList.remove("resizing");
           this.dom.root.style.cursor = "";
           const w = this.dom.root.offsetWidth;
