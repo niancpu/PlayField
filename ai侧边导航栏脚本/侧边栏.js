@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI对话侧边导航栏 - GPT/Gemini通用（增量渲染/弱引用/限量渲染）
 // @namespace    http://tampermonkey.net/
-// @version      8.0
+// @version      8.1
 // @description  GPT/Gemini 通用：侧边目录/书签/搜索/导出。性能：不再强引用消息节点（避免越聊越卡），新消息只“增量追加”列表，列表渲染限量，点击再定位滚动。
 // @author       RenZhe0228
 // @license      MIT
@@ -182,6 +182,12 @@
 
       this._renderScheduled = false;
       this._renderedCount = 0; // 已渲染到 cache.items 的哪个位置（用于增量追加）
+
+      this._lastHref = location.href;
+      this._watchdogTimer = null;
+      this._onVisibility = null;
+      this._lastRescanTs = 0;
+      this._recentSigTs = new Map();
     }
 
     init() {
@@ -189,7 +195,12 @@
       this.renderShell();
       this.bindEvents();
       this.hookHistory();
+      this.bindPageLifecycle();
+      this.startWatchdog();
       this.resetForRoute();
+
+      // 刷新后有些站点会延迟挂载消息流，这里补一次静默重抓
+      setTimeout(() => this.manualRefreshRescan(true), 900);
     }
 
     getSelectors() {
@@ -335,12 +346,22 @@
         textContent: "⬌",
         title: "切换宽度",
       });
+      const btnRefresh = mk("span", "ai-btn", {
+        textContent: "↻",
+        title: "重新抓取当前页面消息",
+      });
       this.dom.btnFold = mk("span", "ai-btn", {
         textContent: this.state.isCollapsed ? "▸" : "▾",
         title: "折叠/展开",
       });
 
-      ctrls.append(btnFx, this.dom.btnTheme, btnWide, this.dom.btnFold);
+      ctrls.append(
+        btnFx,
+        this.dom.btnTheme,
+        btnWide,
+        btnRefresh,
+        this.dom.btnFold,
+      );
       head.append(title, ctrls);
 
       this.dom.search = mk("input", "", {
@@ -388,6 +409,7 @@
       btnFx.onclick = () => this.toggleFx();
       this.dom.btnTheme.onclick = () => this.switchTheme();
       btnWide.onclick = () => this.toggleWidth();
+      btnRefresh.onclick = () => this.manualRefreshRescan(false);
       this.dom.btnFold.onclick = () => this.toggleCollapse();
       btnTop.onclick = () =>
         this.dom.body.scrollTo({ top: 0, behavior: "smooth" });
@@ -565,6 +587,7 @@
         fire();
       };
       window.addEventListener("popstate", fire);
+      window.addEventListener("hashchange", fire);
 
       window.addEventListener(
         "ai-toc:route",
@@ -572,6 +595,48 @@
           this.resetForRoute();
         }, 200),
       );
+    }
+
+    bindPageLifecycle() {
+      if (this._onVisibility) return;
+      this._onVisibility = () => {
+        if (document.visibilityState === "visible") {
+          setTimeout(() => this.selfHeal(), 60);
+        }
+      };
+      document.addEventListener("visibilitychange", this._onVisibility, {
+        passive: true,
+      });
+      window.addEventListener("pageshow", () => this.manualRefreshRescan(true), {
+        passive: true,
+      });
+      window.addEventListener("focus", () => this.selfHeal(), { passive: true });
+    }
+
+    startWatchdog() {
+      if (this._watchdogTimer) clearInterval(this._watchdogTimer);
+      this._watchdogTimer = setInterval(() => {
+        this.selfHeal();
+      }, 1200);
+    }
+
+    selfHeal() {
+      const hrefChanged = location.href !== this._lastHref;
+      const nextRoot = this.findChatRoot();
+      const rootChanged = !!nextRoot && nextRoot !== this.chatRoot;
+      const observerLost = !this.observer;
+
+      if (hrefChanged || rootChanged || observerLost) {
+        this.resetForRoute();
+        return;
+      }
+
+      // 兜底补扫：防止框架仅更新文本节点导致漏采集
+      const now = Date.now();
+      if (now - this._lastRescanTs > 1500) {
+        this._lastRescanTs = now;
+        this.rescanIncremental();
+      }
     }
 
     resetForRoute() {
@@ -584,6 +649,7 @@
       this._renderedCount = 0;
 
       this.chatRoot = this.findChatRoot();
+      this._lastHref = location.href;
       this.attachObserver();
       this.fullRescan();
     }
@@ -595,10 +661,28 @@
       const onMutations = (mutations) => {
         let anyNew = false;
         for (const m of mutations) {
+          if (m.type === "characterData") {
+            const textNode = m.target;
+            const host = textNode?.parentElement;
+            const msgNode = host?.closest ? host.closest(selectors) : null;
+            if (msgNode && this.registerMessageNode(msgNode)) anyNew = true;
+            continue;
+          }
+
           if (!m.addedNodes || m.addedNodes.length === 0) continue;
 
           for (const n of m.addedNodes) {
-            if (!n || n.nodeType !== 1) continue;
+            if (!n) continue;
+
+            if (n.nodeType === 3) {
+              // 新增文本节点
+              const host = n.parentElement;
+              const msgNode = host?.closest ? host.closest(selectors) : null;
+              if (msgNode && this.registerMessageNode(msgNode)) anyNew = true;
+              continue;
+            }
+
+            if (n.nodeType !== 1) continue;
 
             if (n.matches && n.matches(selectors)) {
               if (this.registerMessageNode(n)) anyNew = true;
@@ -620,7 +704,11 @@
       };
 
       this.observer = new MutationObserver(onMutations);
-      this.observer.observe(root, { childList: true, subtree: true });
+      this.observer.observe(root, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
     }
 
     detachObserver() {
@@ -676,8 +764,6 @@
     }
 
     registerMessageNode(node) {
-      if (this.cache.node2key.has(node)) return false;
-
       const raw = Utils.fastText(node);
       let txt = this.normalizeUserText(raw);
 
@@ -686,6 +772,49 @@
       }
 
       if (!txt) return false;
+
+      const now = Date.now();
+      const hash = Utils.hash32(txt);
+      const recentTs = this._recentSigTs.get(hash) || 0;
+      if (now - recentTs < 900) return false;
+
+      if (this.cache.node2key.has(node)) {
+        const oldKey = this.cache.node2key.get(node);
+        const old = oldKey ? this.cache.key2item.get(oldKey) : null;
+        if (!old) return false;
+
+        if (old.txt === txt) {
+          this._recentSigTs.set(hash, now);
+          return false;
+        }
+
+        // 仅在“同一条消息的延迟补全文本”场景做就地更新，避免节点复用覆盖旧消息
+        const age = now - (old.ts || 0);
+        const canPatchInPlace =
+          age < 4000 &&
+          (old.txt === "附件提问" ||
+            txt.startsWith(old.txt) ||
+            old.txt.startsWith(txt));
+
+        if (canPatchInPlace) {
+          old.txt = txt;
+          old.lower = txt.toLowerCase();
+          old.preview = txt;
+          old.hash = hash;
+          old.ts = now;
+          this._recentSigTs.set(hash, now);
+          return true;
+        }
+
+        // 节点被框架复用为“新消息”：解除旧映射，转为新增条目
+        this.cache.node2key.delete(node);
+      }
+
+      const last = this.cache.items[this.cache.items.length - 1];
+      if (last && last.hash === hash && last.txt === txt) {
+        this._recentSigTs.set(hash, now);
+        return false;
+      }
 
       let { key, kind, val, weak } = this.makeKeyAndAnchor(node, txt);
 
@@ -704,16 +833,26 @@
         kind,
         val,
         weak,
-        hash: Utils.hash32(txt),
+        hash,
         txt,
         lower,
         preview,
+        ts: now,
       };
 
       this.cache.items.push(it);
       this.cache.keySet.add(key);
       this.cache.key2item.set(key, it);
       this.cache.node2key.set(node, key);
+      this._recentSigTs.set(hash, now);
+
+      // 清理过期去重签名
+      if (this._recentSigTs.size > 1200) {
+        const expire = now - 20000;
+        for (const [k, t] of this._recentSigTs) {
+          if (t < expire) this._recentSigTs.delete(k);
+        }
+      }
 
       // 缓存限额：丢最早的，避免越聊越大
       if (this.cache.items.length > CFG.MAX_CACHE) {
@@ -740,6 +879,28 @@
         : [];
       for (const n of nodes) this.registerMessageNode(n);
       this.renderListFull(true);
+    }
+
+    manualRefreshRescan(silent = false) {
+      this.resetForRoute();
+      if (!silent) Utils.toast("已重新抓取当前对话");
+    }
+
+    // 不清空缓存的增量补扫：用于兜底漏采集
+    rescanIncremental() {
+      const root = this.chatRoot || this.findChatRoot();
+      if (!root) return;
+
+      const nodes = root.querySelectorAll(this.getSelectors());
+      let any = false;
+      for (const n of nodes) {
+        if (this.registerMessageNode(n)) any = true;
+      }
+
+      if (any) {
+        if (this.state.keyword) this.renderListFull();
+        else this.scheduleRender();
+      }
     }
 
     renderEmpty(text) {
@@ -814,6 +975,13 @@
         return;
       }
 
+      // 仅当用户原本就在底部附近时，自动跟随到底部
+      const nearBottom =
+        this.dom.body.scrollHeight -
+          this.dom.body.scrollTop -
+          this.dom.body.clientHeight <
+        24;
+
       // body 里可能还是 empty 占位
       const firstIsEmpty =
         this.dom.body.firstElementChild &&
@@ -840,6 +1008,10 @@
           if (this.dom.body.firstElementChild)
             this.dom.body.removeChild(this.dom.body.firstElementChild);
         }
+      }
+
+      if (nearBottom) {
+        this.dom.body.scrollTop = this.dom.body.scrollHeight;
       }
     }
 
